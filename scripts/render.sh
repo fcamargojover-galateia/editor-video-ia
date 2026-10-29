@@ -1,10 +1,33 @@
 #!/bin/bash
 # Render final: Remotion → (música con ducking opcional) → loudnorm -14 LUFS.
-# Uso: render.sh <carpeta edicion-...> "<ruta salida.mp4>" [musica.wav] [volumen_musica=0.16]
+# Uso: render.sh <carpeta edicion-...> "<ruta salida.mp4>" [musica.wav] [volumen_musica=0.16] [--preview] [--dry-run]
+#   --preview  borrador: 480p (scale 0.5), 15 fps, CRF 28. Mismo flujo de audio. Sirve para validar el plan antes del render final.
+#   --dry-run  imprime los pasos que haría y no renderiza nada.
 set -e
+PREVIEW=0; DRY=0; ARGS=()
+for x in "$@"; do
+  case "$x" in
+    --preview) PREVIEW=1 ;;
+    --dry-run) DRY=1 ;;
+    *) ARGS+=("$x") ;;
+  esac
+done
+set -- "${ARGS[@]}"
 WORK="$(cd "$1" && pwd)"; OUT="$2"; MUSIC="${3:-}"; MVOL="${4:-0.16}"
+
+if [ $PREVIEW -eq 1 ]; then RFLAGS="--scale=0.5 --fps=15 --crf=28"; else RFLAGS="--crf=18"; fi
+
+if [ $DRY -eq 1 ]; then
+  echo "[dry-run] modo: $([ $PREVIEW -eq 1 ] && echo preview || echo final)"
+  echo "[dry-run] cd $WORK/remotion && npx remotion render src/index.ts Main out/render.mp4 $RFLAGS --log=error"
+  echo "[dry-run] ffmpeg loudnorm I=-14 → $WORK/voz_sfx.wav"
+  if [ -n "$MUSIC" ]; then echo "[dry-run] ffmpeg ducking música '$MUSIC' vol=$MVOL → $WORK/mezcla.wav"; fi
+  echo "[dry-run] ffmpeg mux → $OUT"
+  exit 0
+fi
+
 cd "$WORK/remotion"
-npx remotion render src/index.ts Main out/render.mp4 --crf=18 --log=error 2>&1 | grep -v "network requests" || true
+npx remotion render src/index.ts Main out/render.mp4 $RFLAGS --log=error 2>&1 | grep -v "network requests" || true
 D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 out/render.mp4)
 ffmpeg -v error -y -i out/render.mp4 -vn -af "loudnorm=I=-14:TP=-1.5:LRA=11" -ar 48000 "$WORK/voz_sfx.wav"
 if [ -n "$MUSIC" ]; then
@@ -17,5 +40,5 @@ else
   A="$WORK/voz_sfx.wav"
 fi
 ffmpeg -v error -y -i out/render.mp4 -i "$A" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -shortest "$OUT"
-echo "Listo: $OUT ($(printf %.1f $D)s)"
+echo "Listo: $OUT ($(printf %.1f $D)s)$([ $PREVIEW -eq 1 ] && echo ' [preview]')"
 ffmpeg -i "$OUT" -af ebur128 -f null - 2>&1 | grep -E "^\s+I:" || true

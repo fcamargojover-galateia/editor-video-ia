@@ -91,6 +91,7 @@ def main():
     ap.add_argument("--model", default="medium")
     ap.add_argument("--lang", default="es")
     ap.add_argument("--muletillas", action="store_true")
+    ap.add_argument("--recalcular", action="store_true", help="ignora la caché y vuelve a transcribir")
     a = ap.parse_args()
 
     video = str(Path(a.video).expanduser().resolve())
@@ -122,7 +123,19 @@ def main():
     (work / "crop.txt").write_text("none" if c is None else "%d:%d:%d:%d" % c)
     print("Recorte de marco:", "ninguno" if c is None else "%d:%d:%d:%d" % c)
 
-    # transcripción
+    # transcripción (con caché: misma huella de video + modelo + idioma + muletillas = no se vuelve a transcribir)
+    import hashlib
+    h = hashlib.sha256()
+    with open(video, "rb") as f:
+        for bloque in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloque)
+    clave = f"{h.hexdigest()}|{a.model}|{a.lang}|{a.muletillas}"
+    marca = work / "transcript.clave"
+    if not a.recalcular and marca.exists() and marca.read_text() == clave and (work / "transcript.txt").exists():
+        print("Transcripción en caché (mismo video, modelo e idioma). Usa --recalcular para forzar.")
+        print((work / "transcript.txt").read_text())
+        print(f"\nListo. Siguiente: cut.py \"{work}\"")
+        return
     from faster_whisper import WhisperModel
     m = WhisperModel(a.model, device="cpu", compute_type="int8")
     # el audio se pasa ya decodificado: algunas versiones de PyAV rompen la lectura interna de faster-whisper
@@ -138,6 +151,7 @@ def main():
             words.append({"w": w.word.strip(), "s": round(w.start, 2), "e": round(w.end, 2)})
     (work / "words.json").write_text(json.dumps(words, ensure_ascii=False, indent=0))
     (work / "transcript.txt").write_text("\n".join(lines))
+    marca.write_text(clave)
     print("\n".join(lines))
     print(f"\nListo. Siguiente: cut.py \"{work}\"")
 

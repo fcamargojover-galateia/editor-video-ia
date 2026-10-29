@@ -10,3 +10,8 @@ tarjetas animadas, zooms, música con ducking y render a MP4.
 3. Python: crea un entorno virtual en `.venv/` e instala lo que pidan los scripts de `scripts/`.
 
 `SKILL.md` describe el flujo completo y `references/` tiene la documentación de cada efecto y preset.
+
+## Novedades
+
+- `prep.py` guarda una huella (video + modelo + idioma) y no vuelve a transcribir si no cambió nada. `--recalcular` fuerza la transcripción.
+- `render.sh --dry-run` imprime los pasos sin renderizar. `render.sh --preview` renderiza un borrador a 480p y 15 fps para validar el plan.
